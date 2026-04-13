@@ -1,0 +1,260 @@
+# Pseta
+
+**A coincidence-driven groove agent and open measurement framework for synchrony**
+
+Pseta (Ψζ) listens to a musician playing a drum pad and begins grooving with them — not by predicting what comes next, but by detecting when coincidence density across streams is high enough that action increases it further. The name fuses Ψ (psi — the signal) and ζ (zeta — the density metric the system maximizes).
+
+The drum groove agent is the first experiment. The measurement framework underneath it is the actual contribution: a real-time, stream-agnostic implementation of Anna Taranova's Ψ-model that quantifies synchrony as a computable quantity across any set of timestamped data streams — acoustic, physiological, or neural.
+
+---
+
+## The core idea
+
+Most AI agents act by predicting the future. Pseta acts by measuring the present — specifically, how much independent streams of data are coinciding right now, and whether that coincidence is accumulating.
+
+The measurement is grounded in the Ψ-model (Anna Taranova, PCT/IB2025/055633):
+
+```
+Ψ(t) = ∂/∂t Σ [Sᵢ(t) ∩ Sⱼ(t)] → R(t)
+```
+
+Where `Sᵢ(t)` are independent temporal streams, `∩` is a coincidence operator (meaningful overlap within a time window), and `R(t)` is system response when density crosses a threshold. The model introduces three measurable quantities Pseta operationalizes directly:
+
+- **ζ (density)** — rate of active cross-stream coincidences per unit time. The primary metric Pseta maximizes.
+- **σ (symmetry)** — degree of structural mirroring between streams. Acts as a coherence multiplier.
+- **ρ (resonance)** — multiplicative amplification when three or more streams coincide simultaneously.
+
+The agent runs one continuous loop:
+
+```
+observe → update state → score actions → act
+```
+
+At every tick it scores three possible actions — `listen`, `mirror`, `complement` — by their expected gain in ζ given current state. No mode switches. No programmed transitions. The behavior that emerges — silence early, mimicry as pattern stabilizes, complementary gap-filling as the model fills in — emerges from the scoring function because each action's expected contribution to ζ changes as knowledge accumulates.
+
+---
+
+## Build arc
+
+### Stage 1 — Music (current)
+*Validate that ζ is computable and behaviorally meaningful*
+
+Raspberry Pi + MIDI interface. A drummer plays. Pseta listens, computes ζ across the incoming stream, and responds via an action distribution. Every session logs `(t, stream_id, ζ, σ, action, ΔΨ_actual)` as training data for the learned policy that follows.
+
+**Validation:** ζ measurably above zero and trending upward within 4–8 bars. Action distribution visibly shifts from listen → mirror → complement over session time.
+
+### Stage 2 — Biometrics
+*Validate that ζ generalizes across stream types*
+
+Add HRV, EDA, respiration as additional streams. ζ now measures coincidence across acoustic and physiological domains simultaneously. The framework requires no modification — only new stream interpreters. Validated against WESAD dataset baselines established by independent engineer Dmytro Maidaniuk.
+
+**Validation:** ζ peaks in the musical stream correlate with physiological markers of flow and entrainment.
+
+### Stage 3 — Neural signals
+*Validate noninvasive cross-modal synchrony detection*
+
+Consumer-grade EEG as an additional stream. ζ computed across acoustic, physiological, and neural signals simultaneously. This is the stage at which Pseta becomes a scientific instrument for studying human-machine synchrony without invasive hardware.
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│  Rust binary: midi_capture                  │
+│  Real-time MIDI I/O · nanosecond timestamps │
+│  Dumb pipe — no musical intelligence        │
+└────────────────────┬────────────────────────┘
+                     │ JSONL stream
+┌────────────────────▼────────────────────────┐
+│  Python: groove_agent                       │
+│                                             │
+│  State                                      │
+│  ├── onset history (rolling window)         │
+│  ├── bpm_estimate, bpm_variance             │
+│  ├── beat_phase, bar_phase                  │
+│  ├── groove_map (onset density histogram)   │
+│  ├── recurrence (bar autocorrelation)       │
+│  └── ζ_current, ζ_history                  │
+│                                             │
+│  Action scoring                             │
+│  ├── gain(listen)   = f(uncertainty)        │
+│  ├── gain(mirror)   = f(confidence, ζ)      │
+│  └── gain(complement) = f(recurrence, ζ)   │
+│                                             │
+│  → softmax → argmax → MIDI output           │
+└────────────────────┬────────────────────────┘
+                     │ JSONL session log
+┌────────────────────▼────────────────────────┐
+│  sessions/YYYY-MM-DD_HH-MM-SS.jsonl         │
+│  Every tick: state snapshot, action scores, │
+│  action taken, ζ before/after               │
+└─────────────────────────────────────────────┘
+```
+
+---
+
+## Nomenclature
+
+Pseta uses a unified vocabulary across math, code, and natural language:
+
+| Canonical | Math | Code | Speech |
+|---|---|---|---|
+| stream | Sᵢ(t) | `stream` | stream |
+| coincidence | Sᵢ ∩ Sⱼ | `coincidence` | hit |
+| density | ζ(t) | `density` | density |
+| symmetry | σ(t) | `symmetry` | symmetry |
+| resonance | ρ(t) | `resonance` | resonance |
+| context | H(t) | `context` | context |
+| gain | ΔΨ | `gain` | gain |
+| signal | Ψ(t) | `signal` | the signal |
+| activation | R(t) | `activation` | activation |
+| groove map | — | `groove_map` | groove map |
+| recurrence | — | `recurrence` | recurrence |
+| horizon | W | `horizon` | horizon |
+| action | a(t) | `action` | action |
+| listen / mirror / complement | — | `Action.LISTEN` `.MIRROR` `.COMPLEMENT` | listen, mirror, complement |
+
+---
+
+## Stack
+
+**Rust** — `midir`, `serde_json`
+Real-time MIDI capture and output. Wall-clock timestamping at nanosecond precision. Dumb pipe: no musical intelligence, just timing accuracy.
+
+**Python** — `numpy`, `python-rtmidi`, `tomllib`
+All musical intelligence: state management, ζ computation, action scoring, session logging. Fast to iterate. Runs on Pi.
+
+**Config** — `config.toml`
+All tunable parameters externalized: MIDI ports, tempo range, subdivision, ζ window, action scoring weights.
+
+**Session logs** — `./sessions/YYYY-MM-DD_HH-MM-SS.jsonl`
+Every tick logged. Queryable with DuckDB. Foundation for all future ML work.
+
+---
+
+## Project structure
+
+```
+pseta/
+├── Cargo.toml
+├── src/
+│   └── main.rs          # Rust MIDI capture + scheduled output
+├── groove_agent.py      # Main loop: observe → score → act
+├── state.py             # State dataclass + update functions
+├── actions.py           # Action scoring + MIDI execution
+├── zeta.py              # ζ, σ, ρ computation
+├── logger.py            # Session JSONL logger
+├── config.toml          # All tunable parameters
+├── run.sh               # One-command launch
+├── sessions/            # Session logs (auto-created)
+└── data/                # Groove MIDI Dataset priors (not committed)
+```
+
+---
+
+## Running
+
+```bash
+# Install Rust dependencies
+cargo build --release
+
+# Install Python dependencies
+pip install numpy python-rtmidi
+
+# Run
+./run.sh
+```
+
+`run.sh` starts the Rust MIDI capture binary, pipes it to the Python agent, and logs the session. One command. Deploys to Pi with `rsync` + `systemctl restart pseta`.
+
+---
+
+## Session logs
+
+Every tick produces one JSONL line:
+
+```json
+{
+  "t": 1234567890123456789,
+  "event_type": "tick",
+  "state": {
+    "bpm_estimate": 120.4,
+    "bpm_variance": 0.02,
+    "density_map_confidence": 0.73,
+    "recurrence": 0.81,
+    "zeta_current": 0.34
+  },
+  "action_scores": {
+    "listen": 0.12,
+    "mirror": 0.31,
+    "complement": 0.57
+  },
+  "action_taken": "complement",
+  "zeta_before": 0.34,
+  "zeta_after": 0.38
+}
+```
+
+Queryable with DuckDB:
+```sql
+SELECT action_taken, AVG(zeta_after - zeta_before) as mean_gain
+FROM read_ndjson_auto('sessions/*.jsonl')
+WHERE event_type = 'tick'
+GROUP BY action_taken;
+```
+
+---
+
+## What success looks like
+
+After 4–8 bars of playing:
+
+- `bpm_variance` < 0.05 (stable tempo estimate)
+- `density_map_confidence` > 0.5 (enough data to act on)
+- Mirror notes landing within 30ms of player hits
+- Action distribution visibly shifted toward `complement`
+- ζ above zero and trending upward in session log
+
+The session log makes all of this visible and queryable.
+
+---
+
+## Theoretical anchor
+
+Anna Taranova's Ψ-model (patent PCT/IB2025/055633) is the first rigorous mathematical framework for quantifying cross-modal coincidence — the first formal definition of synchrony as a measurable signal. The model has been independently validated on biometric data (WESAD dataset: EDA and respiration) by engineer Dmytro Maidaniuk, confirming that ζ peaks align with physiological state transitions.
+
+Pseta is an open-source engineering implementation of that framework, beginning with music as a controlled experimental domain.
+
+---
+
+## Collaborators
+
+**Anna Taranova** — Ψ-model author (PCT/IB2025/055633). Theoretical framework. Active collaboration.
+
+**Bernard Beitman MD** — Yale Medical School / University of Virginia. Synchronicity research. Introduced Lilly and Anna.
+
+**Dmytro Maidaniuk** — Signal processing engineer. Independent Ψ-model validation on WESAD biometric dataset.
+
+**Jonathan Zap** — Author, *The Singularity Archetype*. AI and consciousness research.
+
+---
+
+## Open science commitment
+
+All code is MIT licensed. Session log schema, measurement library, and experimental protocols are published as living documents updated with each iteration. Failures are documented in real time alongside successes — what the hand-crafted scoring function gets wrong is as useful to the field as what it gets right.
+
+The goal is replicability by anyone with a Pi, a MIDI controller, and a consumer EEG — not replicability only in a fully equipped lab.
+
+---
+
+## Status
+
+**April 2026** — Architecture complete. Prototype build beginning. Stage 1 target: working groove agent within 4 weeks of hardware setup.
+
+---
+
+*Pseta is a public good. The framework, the code, the data, and the experimental protocols belong to the field.*
+
+*Lilly Fiorino · lilly.fiorino@gmail.com*
+*Theoretical anchor: Anna Taranova, Ψ-Model PCT/IB2025/055633*
