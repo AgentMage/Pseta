@@ -18,78 +18,101 @@ The measurement is grounded in the Ψ-model (Anna Taranova, PCT/IB2025/055633):
 Ψ(t) = ∂/∂t Σ [Sᵢ(t) ∩ Sⱼ(t)] → R(t)
 ```
 
-Where `Sᵢ(t)` are independent temporal streams, `∩` is a coincidence operator (meaningful overlap within a time window), and `R(t)` is system response when density crosses a threshold. The model introduces three measurable quantities Pseta operationalizes directly:
+Where `Sᵢ(t)` are independent temporal streams, `∩` is a coincidence operator, and `R(t)` is system response when coincidence density crosses a threshold. The primary quantity is:
 
-- **ζ (density)** — rate of active cross-stream coincidences per unit time. The primary metric Pseta maximizes.
-- **σ (symmetry)** — degree of structural mirroring between streams. Acts as a coherence multiplier.
-- **ρ (resonance)** — multiplicative amplification when three or more streams coincide simultaneously.
+- **ζ (density)** — rate of active cross-stream coincidences per unit time. The metric everything optimizes.
 
-The agent runs one continuous loop:
+Two further quantities are defined in the model and will be operationalized in later stages:
+
+- **σ (symmetry)** — structural mirroring between streams. Coherence multiplier. Deferred until ζ is validated.
+- **ρ (resonance)** — amplification when three or more streams coincide. Requires N ≥ 3 streams. Deferred.
+
+Once measurement is validated, the agent runs one continuous loop:
 
 ```
 observe → update state → score actions → act
 ```
 
-At every tick it scores three possible actions — `listen`, `mirror`, `complement` — by their expected gain in ζ given current state. No mode switches. No programmed transitions. The behavior that emerges — silence early, mimicry as pattern stabilizes, complementary gap-filling as the model fills in — emerges from the scoring function because each action's expected contribution to ζ changes as knowledge accumulates.
+At every tick it scores three possible actions — `listen`, `mirror`, `complement` — by their expected gain in ζ. No mode switches. No programmed transitions. The behavioral arc (silence early, mimicry as pattern stabilizes, gap-filling as the model fills in) emerges from the scoring function because each action's expected ζ contribution changes as knowledge accumulates.
 
 ---
 
 ## Build arc
 
 ### Stage 1 — Music (current)
-*Validate that ζ is computable and behaviorally meaningful*
+*Validate that ζ is computable and statistically meaningful across two MIDI streams*
 
-Raspberry Pi + MIDI interface. A drummer plays. Pseta listens, computes ζ across the incoming stream, and responds via an action distribution. Every session logs `(t, stream_id, ζ, σ, action, ΔΨ_actual)` as training data for the learned policy that follows.
+**Immediate target — measurement proof of concept:**
 
-**Validation:** ζ measurably above zero and trending upward within 4–8 bars. Action distribution visibly shifts from listen → mirror → complement over session time.
+Two streams run simultaneously:
+- Stream 1: MIDI playback from `datasets/groove-v1.0.0-midionly/` (known timing)
+- Stream 2: Live drum pad input captured by the Rust binary (nanosecond timestamps)
 
-### Stage 2 — Biometrics
+`zeta.py` computes ζ(t) across both streams in real time using temporal proximity as the coincidence criterion: two onsets coincide if `|t₁ − t₂| < ε`, weighted by Φ(x) = exp(−x²/2σ²). A terminal readout displays ζ and R(t) activation state. Every tick is logged to JSONL.
+
+**The one validation question:** Does ζ rise measurably above permutation baseline when the drummer locks in with the groove, and drop when they don't?
+
+This must be answered before the agent layer is built. Action scoring (listen/mirror/complement) comes after measurement is validated. Every session logs to JSONL as training data for the policy that follows.
+
+**Validation criteria:**
+- ζ on real streams exceeds phase-shuffled surrogate baseline by at least one standard deviation at known lock-in events
+- `bpm_variance` < 0.05 after 4–8 bars
+- Mirror notes land within 30ms of player hits (once agent is active)
+- Action distribution shifts listen → mirror → complement over session time (once agent is active)
+
+### Stage 2 — Biometrics (distant future)
 *Validate that ζ generalizes across stream types*
 
-Add HRV, EDA, respiration as additional streams. ζ now measures coincidence across acoustic and physiological domains simultaneously. The framework requires no modification — only new stream interpreters. Validated against WESAD dataset baselines established by independent engineer Dmytro Maidaniuk.
+Contingent on Stage 1 producing valid results. Add HRV, EDA, respiration as additional streams. ζ measures coincidence across acoustic and physiological domains simultaneously. The framework requires no modification — only new stream interpreters. Validated against WESAD dataset baselines.
 
-**Validation:** ζ peaks in the musical stream correlate with physiological markers of flow and entrainment.
-
-### Stage 3 — Neural signals
+### Stage 3 — Neural signals (distant future)
 *Validate noninvasive cross-modal synchrony detection*
 
-Consumer-grade EEG as an additional stream. ζ computed across acoustic, physiological, and neural signals simultaneously. This is the stage at which Pseta becomes a scientific instrument for studying human-machine synchrony without invasive hardware.
+Contingent on Stage 2 validation. Consumer-grade EEG as an additional stream. ζ computed across acoustic, physiological, and neural signals simultaneously. This is the stage at which Pseta becomes a scientific instrument for studying human-machine synchrony without invasive hardware.
+
+Stages 2 and 3 are a multi-year research direction. Do not design current code around them.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│  Rust binary: midi_capture                  │
-│  Real-time MIDI I/O · nanosecond timestamps │
-│  Dumb pipe — no musical intelligence        │
-└────────────────────┬────────────────────────┘
-                     │ JSONL stream
-┌────────────────────▼────────────────────────┐
-│  Python: groove_agent                       │
-│                                             │
-│  State                                      │
-│  ├── onset history (rolling window)         │
-│  ├── bpm_estimate, bpm_variance             │
-│  ├── beat_phase, bar_phase                  │
-│  ├── groove_map (onset density histogram)   │
-│  ├── recurrence (bar autocorrelation)       │
-│  └── ζ_current, ζ_history                  │
-│                                             │
-│  Action scoring                             │
-│  ├── gain(listen)   = f(uncertainty)        │
-│  ├── gain(mirror)   = f(confidence, ζ)      │
-│  └── gain(complement) = f(recurrence, ζ)   │
-│                                             │
-│  → softmax → argmax → MIDI output           │
-└────────────────────┬────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│  Rust binary: midi_capture                       │
+│  · Plays groove from dataset (Stream 1)          │
+│  · Captures live pad input (Stream 2)            │
+│  · Nanosecond wall-clock timestamps              │
+│  · No musical intelligence — pure I/O            │
+└────────────────────┬─────────────────────────────┘
+                     │ JSONL stream (both streams tagged)
+┌────────────────────▼─────────────────────────────┐
+│  Python: groove_agent                            │
+│                                                  │
+│  zeta.py — Stage 1 measurement                  │
+│  ├── S₁(t): groove playback onset timestamps    │
+│  ├── S₂(t): live pad hit timestamps             │
+│  ├── coincidence: |t₁ − t₂| < ε                │
+│  ├── Φ(x) = exp(−x²/2σ²), x = time difference  │
+│  ├── ζ(t): rolling coincidence density          │
+│  └── R(t): threshold activation                 │
+│                                                  │
+│  state.py — accumulates session knowledge        │
+│  ├── bpm_estimate, bpm_variance                  │
+│  ├── beat_phase, bar_phase                       │
+│  ├── groove_map, recurrence                      │
+│  └── ζ_current, ζ_history                       │
+│                                                  │
+│  actions.py — scores and executes [post-Stage 1] │
+│  ├── gain(listen)     = f(uncertainty)           │
+│  ├── gain(mirror)     = f(confidence, ζ)         │
+│  └── gain(complement) = f(recurrence, ζ)         │
+└────────────────────┬─────────────────────────────┘
                      │ JSONL session log
-┌────────────────────▼────────────────────────┐
-│  sessions/YYYY-MM-DD_HH-MM-SS.jsonl         │
-│  Every tick: state snapshot, action scores, │
-│  action taken, ζ before/after               │
-└─────────────────────────────────────────────┘
+┌────────────────────▼─────────────────────────────┐
+│  sessions/YYYY-MM-DD_HH-MM-SS.jsonl              │
+│  Every tick: both stream states, ζ, R(t),        │
+│  action scores, action taken, ζ before/after     │
+└──────────────────────────────────────────────────┘
 ```
 
 ---
@@ -208,23 +231,31 @@ GROUP BY action_taken;
 
 ## What success looks like
 
-After 4–8 bars of playing:
+**Stage 1 measurement validation (current target):**
 
-- `bpm_variance` < 0.05 (stable tempo estimate)
-- `density_map_confidence` > 0.5 (enough data to act on)
+- ζ on real streams exceeds phase-shuffled surrogate baseline at known lock-in events
+- ζ drops toward baseline when the drummer is out of sync
+- Both conditions reproducible across independent sessions
+
+**Stage 1 agent validation (follows measurement):**
+
+- `bpm_variance` < 0.05 after 4–8 bars
+- `density_map_confidence` > 0.5 after 4–8 bars
 - Mirror notes landing within 30ms of player hits
-- Action distribution visibly shifted toward `complement`
-- ζ above zero and trending upward in session log
+- Action distribution visibly shifted toward `complement` over session time
+- ζ trending upward in session log
 
-The session log makes all of this visible and queryable.
+The session log makes all of this queryable. Without surrogate baselines, ζ > 0 has no statistical meaning.
 
 ---
 
-## Theoretical anchor
+## Scientific context
 
-Anna Taranova's Ψ-model (patent PCT/IB2025/055633) is the first rigorous mathematical framework for quantifying cross-modal coincidence — the first formal definition of synchrony as a measurable signal. The model has been independently validated on biometric data (WESAD dataset: EDA and respiration) by engineer Dmytro Maidaniuk, confirming that ζ peaks align with physiological state transitions.
+Anna Taranova's Ψ-model (patent PCT/IB2025/055633) is the mathematical foundation. The paper is the authoritative source for all implementation decisions — when CLAUDE.md, the scope doc, or any other document conflicts with it, the paper governs.
 
-Pseta is an open-source engineering implementation of that framework, beginning with music as a controlled experimental domain.
+Design decisions, their reasoning, rejected alternatives, and falsification conditions are tracked in `lab/decisions.md`. This is a rolling log — failures are first-class entries and are never deleted.
+
+Pseta is an open-source engineering implementation of the Ψ-model, beginning with music as a controlled experimental domain where ground truth (locked-in vs. unlocked drumming) is perceptually verifiable.
 
 ---
 
@@ -250,7 +281,7 @@ The goal is replicability by anyone with a Pi, a MIDI controller, and a consumer
 
 ## Status
 
-**April 2026** — Architecture complete. Prototype build beginning. Stage 1 target: working groove agent within 4 weeks of hardware setup.
+**April 2026** — Architecture defined. Scope locked to two-stream MIDI measurement. Active work: Rust binary (simultaneous playback + capture) and `zeta.py` (temporal proximity coincidence, Gaussian kernel, permutation baseline). Agent layer (action scoring) follows measurement validation.
 
 ---
 

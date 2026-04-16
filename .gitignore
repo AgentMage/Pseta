@@ -1,0 +1,4 @@
+documents/
+
+# Dataset binaries — too large to commit; obtain via schema.md instructions
+datasets/groove-v1.0.0-midionly/groove/*
