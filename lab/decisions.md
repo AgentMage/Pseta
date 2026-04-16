@@ -324,6 +324,53 @@ At defaults: ε = 2.0 × 30 ms = 60 ms. A pair at the boundary contributes Φ = 
 
 ---
 
+### DECISION-013 — UI is pygame; audio is pygame.mixer with 99Sounds WAV samples; timeline scrolls left to right
+Date: 2026-04-15
+Status: ACTIVE
+
+**Decision:** The main UI is written in Python using pygame. Audio playback uses pygame.mixer with individual WAV one-shot files from the [99Sounds 99 Drum Samples](https://99sounds.org/drum-samples/) collection (219 samples, 24-bit WAV, royalty-free). The timeline scrolls left to right — oldest events at left, newest at right, present entering from the right edge (DAW orientation).
+
+**UI layout:**
+- Top region: scrolling timeline — groove lane (top), user lane (bottom), ζ band reserved below (rendered when zeta.py is wired in)
+- Middle region: two pad grids — groove pads (left) and user pads (right), each flashing on note events
+- Bottom region: kit panel (pad → WAV mapping), Pseta options (σ, ε, τ, etc.), transport controls (load, play, stop, loop, BPM display)
+
+**Kit config in `config.toml`** — GM note number → WAV file path:
+```toml
+[kit]
+36 = "samples/kick.wav"
+38 = "samples/snare.wav"
+42 = "samples/hihat_closed.wav"
+46 = "samples/hihat_open.wav"
+49 = "samples/crash.wav"
+51 = "samples/ride.wav"
+41 = "samples/tom_low.wav"
+45 = "samples/tom_mid.wav"
+50 = "samples/tom_high.wav"
+```
+
+Kit panel edits this mapping live — any WAV can be swapped per pad without restarting.
+
+**Audio routing — dual path:**
+- Python pygame.mixer: primary audio engine, triggers WAV on every `note_on` event from either stream
+- Rust MIDI out: optional parallel path, enabled via `{"cmd": "midi_out_en", "enabled": true}`, routes to external hardware synth or soft synth independently
+
+**samples/ directory:** WAV files are not committed to the repo. `samples/README.md` documents the source (99Sounds URL) and license. A setup script downloads and places them.
+
+**Reasoning:** [B] pygame is a natural fit for real-time pad animation and a game-loop event model — the main loop drains the Rust JSONL pipe, updates state, and renders each frame. [A] pygame.mixer handles low-latency WAV playback without additional dependencies. [B] 99Sounds provides a complete kit (kick, snare, hi-hat, toms, cymbals) in one download with a permissive royalty-free license; assembling from Freesound CC0 packs would require sourcing and mapping multiple individual files. [B] DAW-orientation timeline (left=past, right=present) is the convention musicians already read; it also positions the ζ analysis band directly below the hit lanes, making the signal-to-groove relationship visually immediate.
+
+**Alternatives rejected:**
+- fluidsynth + SF2 soundfont: Adds system library dependency; pygame.mixer + WAV is simpler and sufficient for one-shot drum hits.
+- Freesound CC0 packs: Strictly CC0 but requires assembling from multiple sources; 99Sounds is complete in one download.
+- Terminal-only readout: Deferred to this UI design per user direction.
+- Right-to-left timeline (seismograph style): Less familiar for musicians; DAW orientation chosen.
+
+**Falsification condition:** N/A — UI/audio design decisions. Revisit if pygame.mixer latency causes audible lag relative to MIDI timestamps from Rust.
+
+**Outcome:** Pending implementation.
+
+---
+
 ## Open questions (not yet decided)
 
 - **OQ-001** — ~~What value of σ to use?~~ RESOLVED by DECISION-009: σ is a config param, default 30 ms absolute, swept after first session. Tempo-relative mode planned post-sweep.
