@@ -5,6 +5,7 @@ Launches Rust midi_capture binary as a subprocess; communicates via JSONL pipe.
 """
 
 import json
+import math
 import os
 import queue
 import subprocess
@@ -259,11 +260,13 @@ class AppState:
         # Groove pads (16-pad grid)
         self.groove_cc          = saved.get("groove_cc")
         self.groove_remove_mode = False
+        self.groove_solo        = False
         self.groove_kit_paths   = {int(k): v for k, v in saved.get("groove_kit_paths", {}).items()}
 
         # User pads (16-pad grid)
         self.user_cc             = saved.get("user_cc")
         self.user_remove_mode    = False
+        self.user_solo           = False
         self.user_timeline_mode  = False
         self.user_kit_paths      = {int(k): v for k, v in saved.get("user_kit_paths", {}).items()}
         # notes whose hits appear on the timeline; auto-includes any note with a saved sound
@@ -298,6 +301,12 @@ class AppState:
         self.zeta_history: list[tuple[float, zeta_mod.ZetaResult]] = []
         self._zeta_tick_last: float = 0.0
         self._zeta_tick_interval: float = 0.05   # compute ζ every 50 ms
+
+        # Pseta info display toggles
+        self.show_density   = True
+        self.show_symmetry  = True
+        self.show_resonance = True
+        self.show_psi       = True
 
         # Pseta options slider drag state
         self.opt_drag_key: str | None = None
@@ -355,8 +364,17 @@ class AppState:
         bar_s = self.opt_beats_per_bar * 60.0 / bpm
         horizon  = max(2.0, self.opt_tau_bars * bar_s)
 
+        # Solo: restrict streams to the soloed source(s) only.
+        # If both or neither are soloed, all colored pads are included.
+        solo_sources: set[str] = set()
+        if self.groove_solo: solo_sources.add("playback")
+        if self.user_solo:   solo_sources.add("capture")
+        pad_colors = (
+            {k: v for k, v in self.pad_colors.items() if k[0] in solo_sources}
+            if solo_sources else self.pad_colors
+        )
         pairs = zeta_mod.pairs_from_active_pads(
-            self.pad_colors,
+            pad_colors,
             dict(self.onset_streams),
         )
         result = zeta_mod.compute(pairs, now, sigma_s, epsilon_s, horizon)
@@ -469,12 +487,15 @@ def draw_timeline(surf, font_sm, state: AppState):
             y = user_y + 16 + (max_h - h)
         pygame.draw.rect(surf, col, (x, y, 3, h))
 
-    # [A] ζ(t) curve — density (green), symmetry (teal), resonance (amber)
+    # [A] ζ(t) curve — density (green), symmetry (teal), resonance (amber), Ψ (purple)
+    PSI_SCALE = 5.0  # ζ/s at tanh saturation (~±1 lane-half)
     if state.zeta_history:
         pts_density   = []
         pts_symmetry  = []
         pts_resonance = []
-        for ts, res in state.zeta_history:
+        pts_psi       = []
+        zeta_mid_y = zeta_y + zeta_h // 2
+        for idx, (ts, res) in enumerate(state.zeta_history):
             age = now - ts
             if age < 0 or age > TIMELINE_SECS:
                 continue
@@ -482,14 +503,30 @@ def draw_timeline(surf, font_sm, state: AppState):
             pts_density.append((x,  zeta_y + zeta_h - 1 - int(res.density   * (zeta_h - 2))))
             pts_symmetry.append((x, zeta_y + zeta_h - 1 - int(res.symmetry  * (zeta_h - 2))))
             pts_resonance.append((x,zeta_y + zeta_h - 1 - int(res.resonance * (zeta_h - 2))))
+            if idx > 0:
+                t0, r0 = state.zeta_history[idx - 1]
+                dt = ts - t0
+                psi_val = (res.density - r0.density) / dt if dt > 0 else 0.0
+                psi_norm = math.tanh(psi_val / PSI_SCALE)
+                py_psi = zeta_mid_y - int(psi_norm * (zeta_h // 2 - 1))
+                pts_psi.append((x, py_psi))
 
         def _draw_curve(pts, col):
             if len(pts) > 1:
                 pygame.draw.lines(surf, col, False, pts, 1)
 
-        _draw_curve(pts_symmetry,  (60,  190, 190))   # teal  — σ
-        _draw_curve(pts_resonance, (220, 170, 60))    # amber — ρ
-        _draw_curve(pts_density,   ZETA_LINE)          # green — ζ₂
+        # Ψ=0 midline — faint dashed
+        PSI_COL = (200, 120, 220)
+        xm = r.x + 2
+        while xm < r.x + 2 + tw:
+            pygame.draw.line(surf, (80, 50, 90), (xm, zeta_mid_y),
+                             (min(xm + 4, r.x + 2 + tw), zeta_mid_y), 1)
+            xm += 8
+
+        if state.show_symmetry:  _draw_curve(pts_symmetry,  (60,  190, 190))
+        if state.show_resonance: _draw_curve(pts_resonance, (220, 170, 60))
+        if state.show_psi:       _draw_curve(pts_psi,       PSI_COL)
+        if state.show_density:   _draw_curve(pts_density,   ZETA_LINE)
 
         # θ threshold — dashed horizontal line across ζ lane
         theta_y = zeta_y + zeta_h - 1 - int(state.opt_theta_c * (zeta_h - 2))
@@ -500,15 +537,20 @@ def draw_timeline(surf, font_sm, state: AppState):
                              (min(x + 5, r.x + 2 + tw), theta_y), 1)
             x += 10
         theta_lbl = font_sm.render(f"θ {state.opt_theta_c:.2f}", True, THT_COL)
-        # Place label just above the line, avoiding the top "ζ(t)" label
         tly = max(zeta_y + 14, theta_y - 13)
         surf.blit(theta_lbl, (r.x + 4 + font_sm.size("ζ(t)  ")[0], tly))
 
-        # Live readout
+        # Live readout — only active metrics
         _, last_res = state.zeta_history[-1]
-        rdr = f"ζ {last_res.density:.2f}  σ {last_res.symmetry:.2f}  ρ {last_res.resonance:.2f}"
-        surf.blit(font_sm.render(rdr, True, ZETA_LINE),
-                  (r.x + 4, zeta_y + zeta_h - 16))
+        last_psi = zeta_mod.psi(state.zeta_history)
+        parts = []
+        if state.show_density:   parts.append(f"ζ {last_res.density:.2f}")
+        if state.show_symmetry:  parts.append(f"σ {last_res.symmetry:.2f}")
+        if state.show_resonance: parts.append(f"ρ {last_res.resonance:.2f}")
+        if state.show_psi:       parts.append(f"Ψ {last_psi:+.2f}")
+        if parts:
+            surf.blit(font_sm.render("  ".join(parts), True, ZETA_LINE),
+                      (r.x + 4, zeta_y + zeta_h - 16))
 
     # σ / ε coincidence windows — semi-transparent vertical bands centred on t=0 (playhead)
     # ε = binary gate (anything outside never registers), σ = Gaussian kernel half-width
@@ -739,13 +781,19 @@ def draw_controls(surf, font, font_sm, state: AppState, mouse_pos, buttons: dict
     half_h = kit_r.height // 2
     rm_w   = 56
 
-    def _draw_kit_section(title, kit_paths, remove_mode, remove_btn_key, row_pfx, top):
+    solo_w = 44
+
+    def _draw_kit_section(title, kit_paths, remove_mode, remove_btn_key, solo, solo_btn_key, row_pfx, top):
         title_w = font_sm.size(title)[0]
-        rm_r    = pygame.Rect(kit_r.x + 8 + title_w + 8, top + 2, rm_w, 16)
+        rm_r   = pygame.Rect(kit_r.x + 8 + title_w + 8, top + 2, rm_w,   16)
+        solo_r = pygame.Rect(rm_r.right + 4,             top + 2, solo_w, 16)
         surf.blit(font_sm.render(title, True, TEXT_DIM), (kit_r.x+8, top+6))
         button(surf, font_sm, rm_r,
                "● REM" if remove_mode else "REM", active=remove_mode)
+        button(surf, font_sm, solo_r, "SOLO", active=solo,
+               hover=solo_r.collidepoint(mouse_pos))
         buttons[remove_btn_key] = rm_r
+        buttons[solo_btn_key]   = solo_r
         bottom = top + half_h
         y = top + 24
         if kit_paths:
@@ -768,10 +816,10 @@ def draw_controls(surf, font, font_sm, state: AppState, mouse_pos, buttons: dict
             surf.blit(font_sm.render("no sounds set", True, TEXT_DIM), (kit_r.x+8, y))
 
     _draw_kit_section("GROOVE KIT", state.groove_kit_paths, state.groove_remove_mode,
-                      "groove_remove", "kit_row", kit_r.y)
+                      "groove_remove", state.groove_solo, "groove_solo", "kit_row", kit_r.y)
     pygame.draw.line(surf, BORDER, (kit_r.x+4, kit_r.y + half_h), (kit_r.right-4, kit_r.y + half_h))
     _draw_kit_section("USER KIT",   state.user_kit_paths,   state.user_remove_mode,
-                      "user_remove",  "user_kit_row", kit_r.y + half_h + 2)
+                      "user_remove", state.user_solo, "user_solo", "user_kit_row", kit_r.y + half_h + 2)
 
     # --- Transport ---
     tr_r = pygame.Rect(r.x + third, r.y, third, r.height)
@@ -799,22 +847,46 @@ def draw_controls(surf, font, font_sm, state: AppState, mouse_pos, buttons: dict
     pairs_r = pygame.Rect(r.x + 2*third, r.y, r.width - 2*third, r.height)
     surf.blit(font_sm.render("PSETA INFO", True, TEXT_DIM), (pairs_r.x + 8, pairs_r.y + 6))
 
-    n = len(state.pad_colors)
+    solo_sources: set[str] = set()
+    if state.groove_solo: solo_sources.add("playback")
+    if state.user_solo:   solo_sources.add("capture")
+    active_pads = (
+        [k for k in state.pad_colors if k[0] in solo_sources]
+        if solo_sources else list(state.pad_colors)
+    )
+    n       = len(active_pads)
+    n_total = len(state.pad_colors)
     n_pairs = n * (n - 1) // 2
     py = pairs_r.y + 24
-    surf.blit(font_sm.render("stream pairs", True, TEXT_DIM), (pairs_r.x + 8, py))
-    val = font_sm.render(str(n_pairs), True, TEXT)
+    lbl = "stream pairs" + (" [solo]" if solo_sources else "")
+    surf.blit(font_sm.render(lbl, True, TEXT_DIM if not solo_sources else (200, 170, 80)), (pairs_r.x + 8, py))
+    pair_str = f"{n_pairs}" if n == n_total else f"{n_pairs} / {n_total*(n_total-1)//2}"
+    val = font_sm.render(pair_str, True, TEXT)
     surf.blit(val, (pairs_r.right - val.get_width() - 8, py))
 
     if state.zeta_history:
         _, last_r = state.zeta_history[-1]
-        for label, v, col in (("ζ density",  last_r.density,   ZETA_LINE),
-                               ("σ symmetry", last_r.symmetry,  (60, 190, 190)),
-                               ("ρ resonance",last_r.resonance, (220, 170, 60))):
+        psi_val = zeta_mod.psi(state.zeta_history)
+        tw_btn = 14
+        for key, label, v, col in (
+            ("density",   "ζ density",   last_r.density,   ZETA_LINE),
+            ("symmetry",  "σ symmetry",  last_r.symmetry,  (60, 190, 190)),
+            ("resonance", "ρ resonance", last_r.resonance, (220, 170, 60)),
+            ("psi",       "Ψ signal",    psi_val,          (200, 120, 220)),
+        ):
             py += 16
-            surf.blit(font_sm.render(label, True, TEXT_DIM), (pairs_r.x + 8, py))
-            vt = font_sm.render(f"{v:.3f}", True, col)
-            surf.blit(vt, (pairs_r.right - vt.get_width() - 8, py))
+            active = getattr(state, f"show_{key}")
+            tog_r = pygame.Rect(pairs_r.x + 4, py - 1, tw_btn, 12)
+            tog_col = col if active else TEXT_DIM
+            pygame.draw.rect(surf, tog_col, tog_r, 1, border_radius=2)
+            if active:
+                pygame.draw.rect(surf, col, tog_r.inflate(-4, -4), border_radius=1)
+            buttons[f"pseta_tog_{key}"] = tog_r
+            lbl_col = col if active else TEXT_DIM
+            surf.blit(font_sm.render(label, True, lbl_col), (pairs_r.x + 22, py))
+            if active:
+                vt = font_sm.render(f"{v:.3f}", True, col)
+                surf.blit(vt, (pairs_r.right - vt.get_width() - 8, py))
 
 
 def _apply_slider_drag(state: "AppState", key: str, mx: int,
@@ -1196,8 +1268,14 @@ def main():
                 elif "groove_remove" in buttons and buttons["groove_remove"].collidepoint(ev.pos):
                     state.groove_remove_mode = not state.groove_remove_mode
 
+                elif "groove_solo" in buttons and buttons["groove_solo"].collidepoint(ev.pos):
+                    state.groove_solo = not state.groove_solo
+
                 elif "user_remove" in buttons and buttons["user_remove"].collidepoint(ev.pos):
                     state.user_remove_mode = not state.user_remove_mode
+
+                elif "user_solo" in buttons and buttons["user_solo"].collidepoint(ev.pos):
+                    state.user_solo = not state.user_solo
 
                 elif "groove_cc_dec" in buttons and buttons["groove_cc_dec"].collidepoint(ev.pos):
                     cur = state.groove_cc if state.groove_cc is not None else 0
@@ -1237,6 +1315,14 @@ def main():
                 elif "loop" in buttons and buttons["loop"].collidepoint(ev.pos):
                     state.loop_enabled = not state.loop_enabled
                     bridge.send(cmd="loop", enabled=state.loop_enabled)
+
+                elif any(k.startswith("pseta_tog_") and isinstance(v, pygame.Rect)
+                         and v.collidepoint(ev.pos) for k, v in buttons.items()):
+                    for k, v in buttons.items():
+                        if k.startswith("pseta_tog_") and isinstance(v, pygame.Rect) and v.collidepoint(ev.pos):
+                            attr = "show_" + k[len("pseta_tog_"):]
+                            setattr(state, attr, not getattr(state, attr))
+                            break
 
                 elif any(k.startswith("opt_dec_") or k.startswith("opt_inc_")
                          for k, v in buttons.items()
@@ -1488,16 +1574,6 @@ def _handle_file_pick(pick: dict, bridge: "RustBridge",
             state.status_msg  = f"Loaded: {os.path.basename(path)}"
             bridge.send(cmd="load", path=path)
             save_settings(state)
-
-    elif action == "set_sound":
-        note = pick.get("note")
-        if path and note is not None:
-            try:
-                audio.kit[note] = pygame.mixer.Sound(path)
-                name = GM_DRUMS.get(note, f"n{note}")
-                state.status_msg = f"Sound set: {name} → {os.path.basename(path)}"
-            except pygame.error as e:
-                state.status_msg = f"Could not load sound: {e}"
 
     elif action == "set_user_sound":
         note = pick.get("note")

@@ -15,31 +15,56 @@
   "user_timeline_notes": [
     44
   ],
-  "groove_midi_path": "/home/lilly/Documents/Code/Pseta/datasets/groove-v1.0.0-midionly/groove/drummer7/session2/6_rock_120_beat_4-4.mid",
+  "groove_midi_path": "/home/lilly/Documents/Code/Pseta/datasets/groove-v1.0.0-midionly/groove/drummer2/session2/11_rock_130_beat_4-4.mid",
   "input_port": "MPK Mini Mk II:MPK Mini Mk II MIDI 1 28:0",
   "output_port": "",
   "pad_colors": {
-    "playback_36": [
+    "playback_38": [
+      60,
+      80,
+      220
+    ],
+    "playback_44": [
       220,
       60,
+      110
+    ],
+    "playback_46": [
+      220,
+      210,
       60
     ],
-    "playback_38": [
+    "playback_51": [
       220,
+      210,
+      60
+    ],
+    "capture_44": [
+      220,
+      60,
+      110
+    ],
+    "capture_48": [
       130,
+      210,
       60
     ],
-    "playback_42": [
-      220,
+    "capture_45": [
+      130,
+      210,
+      60
+    ],
+    "playback_36": [
+      130,
       210,
       60
     ]
   },
   "pseta_options": {
-    "bpm": 120.0,
+    "bpm": 130.00013000013,
     "beats_per_bar": 4,
-    "sigma_ms": 28.0,
-    "epsilon_factor": 2.0,
+    "sigma_ms": 30.0,
+    "epsilon_factor": 2.2,
     "tau_bars": 1.0,
     "theta_c": 0.85
   }

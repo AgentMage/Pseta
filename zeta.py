@@ -120,11 +120,16 @@ def zeta4_quartet(
         return 0.0
 
     t_lo = t - horizon
-    # Collect all onsets per stream
+    # Deduplicate by object identity before filtering — pairs share stream
+    # references, so the same raw list appears N-1 times across all pairs.
+    # Counting duplicates as distinct streams inflates streams_hit counts.
+    seen: set[int] = set()
     all_streams: list[list[float]] = []
     for a, b in stream_pairs:
-        all_streams.append([o for o in a if t_lo <= o <= t])
-        all_streams.append([o for o in b if t_lo <= o <= t])
+        for raw in (a, b):
+            if id(raw) not in seen:
+                seen.add(id(raw))
+                all_streams.append([o for o in raw if t_lo <= o <= t])
 
     # Build epsilon-width bins from all onset times
     all_onsets = sorted(o for s in all_streams for o in s)
@@ -275,7 +280,7 @@ def compute(
 # ---------------------------------------------------------------------------
 
 def psi(
-    zeta_history: list[tuple[float, float]],
+    zeta_history: list[tuple[float, "ZetaResult"]],
 ) -> float:
     """
     [C] Ψ(t) = dζ/dt — rate of change of coincidence density.
@@ -291,19 +296,19 @@ def psi(
     stream derivatives Ṡᵢ which are not tracked for onset streams.
 
     Parameters:
-        zeta_history: list of (timestamp_s, zeta_density) ordered by time
+        zeta_history: list of (timestamp_s, ZetaResult) ordered by time
 
     Returns:
         Approximate Ψ(t) in ζ-units/second. 0.0 if fewer than 2 samples.
     """
     if len(zeta_history) < 2:
         return 0.0
-    t1, z1 = zeta_history[-1]
-    t0, z0 = zeta_history[-2]
+    t1, r1 = zeta_history[-1]
+    t0, r0 = zeta_history[-2]
     dt = t1 - t0
     if dt <= 0:
         return 0.0
-    return (z1 - z0) / dt
+    return (r1.density - r0.density) / dt
 
 
 # ---------------------------------------------------------------------------

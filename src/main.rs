@@ -456,7 +456,6 @@ fn main() {
                                 _ => return,
                             };
                             let t = now_ns();
-                            let _ = is_on; // captured in type_str
                             capture_tx.send(json!({
                                 "type":     type_str,
                                 "t":        t,
