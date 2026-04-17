@@ -24,7 +24,7 @@ A MIDI I/O system that plays a groove from the dataset, captures live drumming a
 **Build targets:**
 1. Rust binary: MIDI capture (live pads) + MIDI playback (dataset groove), simultaneously
 2. `zeta.py`: ζ(t) and σ(t) computed across the two streams using the Φ kernel
-3. Terminal readout: real-time display of ζ value, σ value, and R(t) activation state
+3. pygame UI (`main.py`): timeline (groove + user + ζ(t) lanes), dual 4×4 pad grids, MIDI monitors, transport, port selection, stream pair configuration via pad color assignment
 4. Session logger: every tick to JSONL, including both stream states
 
 **The one validation question:** Does ζ rise measurably above permutation baseline when the drummer locks in with the groove, and drop when they don't?

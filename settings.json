@@ -1,57 +1,46 @@
 {
-  "groove_cc": 39,
+  "groove_cc": 36,
   "groove_kit_paths": {
-    "44": "/home/lilly/Documents/Code/Pseta/samples/Casio MT-500/HH_c.wav",
-    "40": "/home/lilly/Documents/Code/Pseta/samples/Casio MT-500/Sd.wav",
-    "43": "/home/lilly/Documents/Code/Pseta/samples/Casio MT-500/Tomlo.wav",
-    "45": "/home/lilly/Documents/Code/Pseta/samples/Casio MT-500/BassDrum.wav",
-    "48": "/home/lilly/Documents/Code/Pseta/samples/Casio MT-500/Tomhi.wav"
+    "36": "/home/lilly/Documents/Code/Pseta/samples/Casio MT-500/BassDrum.wav",
+    "38": "/home/lilly/Documents/Code/Pseta/samples/Casio MT-500/Sd.wav",
+    "42": "/home/lilly/Documents/Code/Pseta/samples/Casio MT-500/HH_c.wav",
+    "44": "/home/lilly/Documents/Code/Pseta/samples/Casio MT-500/HH_o.wav",
+    "45": "/home/lilly/Documents/Code/Pseta/samples/Casio MT-500/Tomhi.wav",
+    "46": "/home/lilly/Documents/Code/Pseta/samples/Casio MT-500/Clap.wav",
+    "47": "/home/lilly/Documents/Code/Pseta/samples/Casio MT-500/Bnglo.wav",
+    "48": "/home/lilly/Documents/Code/Pseta/samples/Casio MT-500/Bnghi.wav"
   },
   "user_cc": 44,
-  "user_kit_paths": {
-    "44": "/home/lilly/Documents/Code/Pseta/samples/Casio MT-500/Clap.wav"
-  },
+  "user_kit_paths": {},
   "user_timeline_notes": [
     44
   ],
-  "groove_midi_path": "/home/lilly/Documents/Code/Pseta/datasets/groove-v1.0.0-midionly/groove/drummer7/session2/9_rock_95_fill_4-4.mid",
+  "groove_midi_path": "/home/lilly/Documents/Code/Pseta/datasets/groove-v1.0.0-midionly/groove/drummer7/session2/6_rock_120_beat_4-4.mid",
   "input_port": "MPK Mini Mk II:MPK Mini Mk II MIDI 1 28:0",
   "output_port": "",
   "pad_colors": {
-    "playback_48": [
-      60,
-      200,
-      190
-    ],
-    "playback_43": [
-      60,
-      200,
-      100
-    ],
-    "capture_44": [
+    "playback_36": [
       220,
       60,
       60
     ],
-    "playback_44": [
-      60,
-      150,
-      220
+    "playback_38": [
+      220,
+      130,
+      60
     ],
-    "playback_45": [
+    "playback_42": [
       220,
       210,
       60
-    ],
-    "playback_40": [
-      220,
-      60,
-      60
-    ],
-    "capture_48": [
-      60,
-      150,
-      220
     ]
+  },
+  "pseta_options": {
+    "bpm": 120.0,
+    "beats_per_bar": 4,
+    "sigma_ms": 28.0,
+    "epsilon_factor": 2.0,
+    "tau_bars": 1.0,
+    "theta_c": 0.85
   }
 }

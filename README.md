@@ -48,7 +48,7 @@ Two streams run simultaneously:
 - Stream 1: MIDI playback from `datasets/groove-v1.0.0-midionly/` (known timing)
 - Stream 2: Live drum pad input captured by the Rust binary (nanosecond timestamps)
 
-`zeta.py` computes ζ(t) across both streams in real time using temporal proximity as the coincidence criterion: two onsets coincide if `|t₁ − t₂| < ε`, weighted by Φ(x) = exp(−x²/2σ²). A terminal readout displays ζ and R(t) activation state. Every tick is logged to JSONL.
+`zeta.py` computes ζ(t) across both streams in real time using temporal proximity as the coincidence criterion: two onsets coincide if `|t₁ − t₂| < ε`, weighted by Φ(x) = exp(−x²/2σ²). A pygame UI displays both streams and the live ζ(t) plot. Every tick is logged to JSONL.
 
 **The one validation question:** Does ζ rise measurably above permutation baseline when the drummer locks in with the groove, and drop when they don't?
 
@@ -86,9 +86,16 @@ Stages 2 and 3 are a multi-year research direction. Do not design current code a
 └────────────────────┬─────────────────────────────┘
                      │ JSONL stream (both streams tagged)
 ┌────────────────────▼─────────────────────────────┐
-│  Python: groove_agent                            │
+│  Python: main.py (pygame UI + agent host)        │
 │                                                  │
-│  zeta.py — Stage 1 measurement                  │
+│  UI layer                                        │
+│  ├── Timeline: groove + user lanes + ζ(t) band  │
+│  ├── Pad grids: 4×4 GM drum pads per stream     │
+│  ├── MIDI monitors: scrolling per-source logs   │
+│  ├── Transport: load/play/stop/loop, port sel.  │
+│  └── Stream config: pad color = stream pair     │
+│                                                  │
+│  zeta.py — measurement                          │
 │  ├── S₁(t): groove playback onset timestamps    │
 │  ├── S₂(t): live pad hit timestamps             │
 │  ├── coincidence: |t₁ − t₂| < ε                │
@@ -114,6 +121,8 @@ Stages 2 and 3 are a multi-year research direction. Do not design current code a
 │  action scores, action taken, ζ before/after     │
 └──────────────────────────────────────────────────┘
 ```
+
+Pads represent streams. The comparisons panel lists which pad pairs are being compared for coincidence — one entry per color shared across a groove pad and a user pad. Assign the same color to two pads to add a comparison; the ζ computation tracks coincidences across each listed pair.
 
 ---
 
@@ -145,8 +154,8 @@ Pseta uses a unified vocabulary across math, code, and natural language:
 **Rust** — `midir`, `serde_json`
 Real-time MIDI capture and output. Wall-clock timestamping at nanosecond precision. Dumb pipe: no musical intelligence, just timing accuracy.
 
-**Python** — `numpy`, `python-rtmidi`, `tomllib`
-All musical intelligence: state management, ζ computation, action scoring, session logging. Fast to iterate. Runs on Pi.
+**Python** — `numpy`, `pygame`, `tomllib`
+All musical intelligence: state management, ζ computation, action scoring, session logging. pygame UI is the operator surface. Fast to iterate. Runs on Pi.
 
 **Config** — `config.toml`
 All tunable parameters externalized: MIDI ports, tempo range, subdivision, ζ window, action scoring weights.
@@ -162,16 +171,16 @@ Every tick logged. Queryable with DuckDB. Foundation for all future ML work.
 pseta/
 ├── Cargo.toml
 ├── src/
-│   └── main.rs          # Rust MIDI capture + scheduled output
-├── groove_agent.py      # Main loop: observe → score → act
-├── state.py             # State dataclass + update functions
-├── actions.py           # Action scoring + MIDI execution
-├── zeta.py              # ζ, σ, ρ computation
-├── logger.py            # Session JSONL logger
+│   └── main.rs          # Rust MIDI capture + playback
+├── main.py              # pygame UI + agent host
+├── zeta.py              # ζ, σ, ρ computation  [not yet built]
+├── state.py             # State dataclass + update functions  [not yet built]
+├── actions.py           # Action scoring + MIDI execution  [not yet built]
+├── logger.py            # Session JSONL logger  [not yet built]
 ├── config.toml          # All tunable parameters
 ├── run.sh               # One-command launch
 ├── sessions/            # Session logs (auto-created)
-└── data/                # Groove MIDI Dataset priors (not committed)
+└── datasets/            # Groove MIDI Dataset (not committed)
 ```
 
 ---
@@ -179,17 +188,17 @@ pseta/
 ## Running
 
 ```bash
-# Install Rust dependencies
+# Build Rust binary
 cargo build --release
 
 # Install Python dependencies
-pip install numpy python-rtmidi
+pip install pygame tomli
 
 # Run
 ./run.sh
 ```
 
-`run.sh` starts the Rust MIDI capture binary, pipes it to the Python agent, and logs the session. One command. Deploys to Pi with `rsync` + `systemctl restart pseta`.
+`run.sh` builds the Rust binary, activates the Python venv, and launches the pygame UI. The UI starts the Rust subprocess and manages the MIDI pipe. Deploys to Pi with `rsync` + `systemctl restart pseta`.
 
 ---
 
@@ -281,7 +290,7 @@ The goal is replicability by anyone with a Pi, a MIDI controller, and a consumer
 
 ## Status
 
-**April 2026** — Architecture defined. Scope locked to two-stream MIDI measurement. Active work: Rust binary (simultaneous playback + capture) and `zeta.py` (temporal proximity coincidence, Gaussian kernel, permutation baseline). Agent layer (action scoring) follows measurement validation.
+**April 2026** — Rust MIDI binary and pygame UI complete. Both streams (groove playback + live capture) flow into the UI with real-time visualization. Stream pair configuration via pad color assignment is working. Next: `zeta.py` — the Φ kernel, ζ(t) computation, and permutation baseline. Agent layer (action scoring) follows measurement validation.
 
 ---
 

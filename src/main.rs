@@ -35,12 +35,12 @@ struct NoteEvent {
     is_on: bool,
 }
 
-fn parse_midi(path: &str) -> (Vec<NoteEvent>, f64) {
+fn parse_midi(path: &str) -> (Vec<NoteEvent>, f64, u8, u8) {
     let data = match fs::read(path) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("[midi_capture] failed to read {}: {}", path, e);
-            return (vec![], 120.0);
+            return (vec![], 120.0, 4, 4);
         }
     };
 
@@ -48,7 +48,7 @@ fn parse_midi(path: &str) -> (Vec<NoteEvent>, f64) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("[midi_capture] failed to parse MIDI: {}", e);
-            return (vec![], 120.0);
+            return (vec![], 120.0, 4, 4);
         }
     };
 
@@ -57,19 +57,35 @@ fn parse_midi(path: &str) -> (Vec<NoteEvent>, f64) {
         _ => 480,
     };
 
-    // Build global tempo map from all tracks
-    let mut tempo_map: Vec<(u64, u64)> = vec![(0, 500_000)]; // (tick, us_per_beat)
+    // Build global tempo map and extract first time signature from all tracks
+    let mut tempo_map: Vec<(u64, u64)> = Vec::new(); // (tick, us_per_beat)
+    let mut ts_num: u8 = 4;   // beats per bar (numerator)
+    let mut ts_den: u8 = 4;   // beat unit denominator (actual value, not exponent)
+    let mut ts_found = false;
     for track in &smf.tracks {
         let mut tick: u64 = 0;
         for event in track.iter() {
             tick += event.delta.as_int() as u64;
-            if let TrackEventKind::Meta(MetaMessage::Tempo(t)) = event.kind {
-                tempo_map.push((tick, t.as_int() as u64));
+            match event.kind {
+                TrackEventKind::Meta(MetaMessage::Tempo(t)) => {
+                    tempo_map.push((tick, t.as_int() as u64));
+                }
+                TrackEventKind::Meta(MetaMessage::TimeSignature(num, den_exp, _, _)) => {
+                    if !ts_found {
+                        ts_num   = num;
+                        ts_den   = 1u8 << den_exp; // 2^den_exp → actual denominator
+                        ts_found = true;
+                    }
+                }
+                _ => {}
             }
         }
     }
     tempo_map.sort_by_key(|x| x.0);
     tempo_map.dedup_by_key(|x| x.0);
+    if tempo_map.is_empty() || tempo_map[0].0 > 0 {
+        tempo_map.insert(0, (0, 500_000)); // fallback: 120 BPM if no tick-0 event
+    }
 
     // Convert absolute tick to microseconds using tempo map
     let tick_to_us = |target_tick: u64| -> u64 {
@@ -124,7 +140,7 @@ fn parse_midi(path: &str) -> (Vec<NoteEvent>, f64) {
     }
 
     events.sort_by_key(|e| e.time_us);
-    (events, bpm)
+    (events, bpm, ts_num, ts_den)
 }
 
 // ---------------------------------------------------------------------------
@@ -159,6 +175,7 @@ enum Cmd {
     Play,
     Stop,
     Loop(bool),
+    SetBpm(f64),
     MidiOutEnable(bool),
     SetInputPort(String),
     SetOutputPort(String),
@@ -172,6 +189,7 @@ fn parse_cmd(line: &str) -> Option<Cmd> {
         "play"         => Some(Cmd::Play),
         "stop"         => Some(Cmd::Stop),
         "loop"         => Some(Cmd::Loop(v["enabled"].as_bool().unwrap_or(false))),
+        "set_bpm"      => Some(Cmd::SetBpm(v["bpm"].as_f64().unwrap_or(120.0))),
         "midi_out_en"  => Some(Cmd::MidiOutEnable(v["enabled"].as_bool().unwrap_or(false))),
         "set_input"    => Some(Cmd::SetInputPort(v["port"].as_str()?.to_string())),
         "set_output"   => Some(Cmd::SetOutputPort(v["port"].as_str()?.to_string())),
@@ -186,6 +204,8 @@ fn parse_cmd(line: &str) -> Option<Cmd> {
 
 fn spawn_playback(
     events: Vec<NoteEvent>,
+    loaded_bpm: f64,
+    target_bpm: Arc<Mutex<f64>>,
     loop_flag: Arc<Mutex<bool>>,
     stop_rx: std::sync::mpsc::Receiver<()>,
     out_tx: Sender<String>,
@@ -201,10 +221,14 @@ fn spawn_playback(
                     return;
                 }
 
-                // Sleep until event time
+                // Scale event time by loaded_bpm / target_bpm so the user-set BPM
+                // controls playback speed regardless of the MIDI file's embedded tempo.
+                let tbpm = (*target_bpm.lock().unwrap()).max(1.0);
+                let scaled_us = (ev.time_us as f64 * loaded_bpm / tbpm) as u64;
+
                 let elapsed_us = start.elapsed().as_micros() as u64;
-                if ev.time_us > elapsed_us {
-                    thread::sleep(Duration::from_micros(ev.time_us - elapsed_us));
+                if scaled_us > elapsed_us {
+                    thread::sleep(Duration::from_micros(scaled_us - elapsed_us));
                 }
 
                 // Check stop again after sleep
@@ -288,6 +312,7 @@ fn main() {
     let loop_flag        = Arc::new(Mutex::new(false));
     let midi_out_enabled = Arc::new(Mutex::new(false));
     let midi_out_conn: Arc<Mutex<Option<MidiOutputConnection>>> = Arc::new(Mutex::new(None));
+    let target_bpm: Arc<Mutex<f64>> = Arc::new(Mutex::new(120.0));
 
     // Playback control
     let mut stop_tx: Option<std::sync::mpsc::SyncSender<()>> = None;
@@ -322,14 +347,18 @@ fn main() {
                 if let Some(tx) = stop_tx.take() {
                     tx.try_send(()).ok();
                 }
-                let (events, bpm) = parse_midi(&path);
+                let (events, bpm, ts_num, ts_den) = parse_midi(&path);
                 loaded_bpm = bpm;
+                // Seed target_bpm to the file's own BPM so default playback matches
+                *target_bpm.lock().unwrap() = loaded_bpm;
                 loaded_events = events;
                 let duration_us = loaded_events.last().map(|e| e.time_us).unwrap_or(0);
                 emit(&out_tx, json!({
-                    "type": "file_loaded",
-                    "path": path,
-                    "bpm":  loaded_bpm,
+                    "type":        "file_loaded",
+                    "path":        path,
+                    "bpm":         loaded_bpm,
+                    "ts_num":      ts_num,
+                    "ts_den":      ts_den,
                     "event_count": loaded_events.len(),
                     "duration_us": duration_us,
                 }));
@@ -355,15 +384,31 @@ fn main() {
                 let (s_tx, s_rx) = std::sync::mpsc::sync_channel::<()>(1);
                 stop_tx = Some(s_tx);
 
+                let tbpm = (*target_bpm.lock().unwrap()).max(1.0);
+                let scaled_duration_us = (loaded_events.last()
+                    .map(|e| e.time_us).unwrap_or(0) as f64 * loaded_bpm / tbpm) as u64;
+
                 spawn_playback(
                     events,
+                    loaded_bpm,
+                    Arc::clone(&target_bpm),
                     Arc::clone(&loop_flag),
                     s_rx,
                     out_tx.clone(),
                     Arc::clone(&midi_out_conn),
                     Arc::clone(&midi_out_enabled),
                 );
-                emit(&out_tx, json!({ "type": "playback_started", "bpm": loaded_bpm }));
+                emit(&out_tx, json!({
+                    "type": "playback_started",
+                    "bpm": tbpm,
+                    "duration_us": scaled_duration_us,
+                }));
+            }
+
+            Cmd::SetBpm(bpm) => {
+                let clamped = bpm.clamp(1.0, 960.0);
+                *target_bpm.lock().unwrap() = clamped;
+                emit(&out_tx, json!({ "type": "bpm_set", "bpm": clamped }));
             }
 
             Cmd::Stop => {
