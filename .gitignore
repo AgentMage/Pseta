@@ -2,3 +2,20 @@ documents/
 
 # Dataset binaries — too large to commit; obtain via schema.md instructions
 datasets/groove-v1.0.0-midionly/groove/*
+
+# Drum samples — download via samples/README.md instructions
+samples/*.wav
+samples/*.ogg
+samples/*.aif
+samples/*.aiff
+
+# Session logs
+sessions/
+
+# Rust build artifacts
+target/
+
+# Python
+__pycache__/
+*.pyc
+.venv/

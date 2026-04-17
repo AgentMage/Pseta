@@ -1,0 +1,32 @@
+# Pseta configuration
+# All tunable parameters. See lab/decisions.md for reasoning behind each value.
+
+[midi]
+input_port  = ""     # Drum pad MIDI input port name. Empty = list available on startup.
+output_port = ""     # External synth MIDI output port name. Empty = disabled.
+midi_out_enabled = false
+
+[kernel]
+# [A] Gaussian kernel Φ(x) = exp(−x²/2σ²), x = inter-onset distance in ms (DECISION-007, DECISION-009)
+sigma_ms           = 30.0
+sigma_mode         = "absolute"   # "absolute" | "tempo_relative"
+sigma_tempo_factor = 0.1          # σ = factor × beat_duration_ms (tempo_relative only)
+epsilon_sigma_factor = 2.0        # ε = factor × sigma_ms; binary coincidence gate (DECISION-012)
+
+[window]
+# [A] Triple-gated window for ζ(t) (DECISION-010)
+tau_bars       = 1.0    # τ = tau_bars × bar_duration_ms; exponential decay half-life
+horizon_events = 64     # hard cap: last N onsets per stream
+weight_floor   = 0.05   # prune pairs where exp(−age/τ) < this (~3τ effective memory)
+
+[streams]
+# [A] Event types counted as onsets (DECISION-011)
+include_note_off = false   # true = include note_off; meaningful for sustained instruments only
+
+[zeta]
+# [A] R(t) activation threshold (DECISION-005)
+theta_c = 0.5
+
+[session]
+log_dir = "sessions"
+
