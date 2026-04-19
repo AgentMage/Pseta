@@ -12,7 +12,7 @@ The drum groove agent is the first experiment. The measurement framework underne
 
 Most AI agents act by predicting the future. Pseta acts by measuring the present — specifically, how much independent streams of data are coinciding right now, and whether that coincidence is accumulating.
 
-The measurement is grounded in the Ψ-model (Anna Taranova, PCT/IB2025/055633):
+The measurement is grounded in the Ψ-model (Anna Taranova, PCT/IB2025/055633, github.com/psi-model/psi-model-by-anna-taranova):
 
 ```
 Ψ(t) = ∂/∂t Σ [Sᵢ(t) ∩ Sⱼ(t)] → R(t)
