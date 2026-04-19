@@ -2,7 +2,7 @@
 
 **A coincidence-driven groove agent and open measurement framework for synchrony**
 
-Pseta (Ψζ) listens to a musician playing a drum pad and begins grooving with them — not by predicting what comes next, but by detecting when coincidence density across streams is high enough that action increases it further. The name fuses Ψ (psi — the signal) and ζ (zeta — the density metric the system maximizes).
+Pseta (Ψζ) listens to a musician playing and begins grooving with them — not by predicting what comes next, but by detecting when coincidence density across streams is high enough that action increases it further. The name fuses Ψ (psi — the signal) and ζ (zeta — the density metric the system maximizes).
 
 The drum groove agent is the first experiment. The measurement framework underneath it is the actual contribution: a real-time, stream-agnostic implementation of Anna Taranova's Ψ-model that quantifies synchrony as a computable quantity across any set of timestamped data streams — acoustic, physiological, or neural.
 
